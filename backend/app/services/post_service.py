@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from datetime import datetime, timezone
 
 from sqlalchemy import func, select
@@ -17,6 +18,10 @@ from app.platforms.meta import MetaPlatform
 from app.platforms.tiktok import TikTokPlatform
 from app.platforms.twitter import TwitterPlatform
 from app.schemas.post import PostCreate
+from app.utils.health_monitor import health_monitor
+from app.utils.rate_limiter import rate_limiter
+
+logger = logging.getLogger(__name__)
 
 
 def get_platform_client(account: SocialAccount) -> SocialPlatformBase:
@@ -121,6 +126,26 @@ async def _publish_post(
     media_paths = [a.file_path for a in media_assets]
 
     async def publish_to_account(account: SocialAccount) -> None:
+        platform = account.platform
+        acct_id = account.id
+
+        # Check daily publish limit
+        if not rate_limiter.can_publish(platform, acct_id):
+            pp_result = await db.execute(
+                select(PostPlatform).where(
+                    PostPlatform.post_id == post.id,
+                    PostPlatform.social_account_id == acct_id,
+                )
+            )
+            pp = pp_result.scalar_one()
+            pp.status = "failed"
+            pp.error_message = f"Daily publish limit reached for {platform}"
+            logger.warning("Daily publish limit reached for %s:%s", platform, acct_id)
+            return
+
+        # Acquire rate limit slot (waits if needed)
+        await rate_limiter.acquire(platform, acct_id)
+
         client = get_platform_client(account)
         caption = (platform_captions or {}).get(account.id, post.caption)
         full_text = caption
@@ -149,9 +174,19 @@ async def _publish_post(
                 json.dumps(result.platform_media_ids) if result.platform_media_ids else None
             )
             pp.published_at = datetime.now(timezone.utc)
+            # Track success in rate limiter and health monitor
+            rate_limiter.record_publish(platform, acct_id)
+            health_monitor.record_publish(platform, acct_id)
         else:
             pp.status = "failed"
             pp.error_message = result.error_message
+            health_monitor.record_error(platform, acct_id, result.error_message or "Unknown error")
+            # Check for auth failures
+            if result.error_message and ("401" in result.error_message or "403" in result.error_message):
+                health_monitor.record_auth_failure(platform, acct_id)
+            # Check for rate limit hits
+            if result.error_message and "429" in result.error_message:
+                rate_limiter.record_rate_limit_hit(platform, acct_id)
 
     # Publish to all platforms concurrently
     await asyncio.gather(*[publish_to_account(acc) for acc in accounts], return_exceptions=True)

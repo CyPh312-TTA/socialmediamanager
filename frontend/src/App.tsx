@@ -12,6 +12,12 @@ import MediaLibrary from './pages/MediaLibrary';
 import Analytics from './pages/Analytics';
 import Accounts from './pages/Accounts';
 import Settings from './pages/Settings';
+import Inbox from './pages/Inbox';
+import Strategy from './pages/Strategy';
+import LinkInBio from './pages/LinkInBio';
+import FeedPlanner from './pages/FeedPlanner';
+import BulkSchedule from './pages/BulkSchedule';
+import Categories from './pages/Categories';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -53,6 +59,12 @@ function AppContent() {
         <Route path="/media" element={<MediaLibrary />} />
         <Route path="/analytics" element={<Analytics />} />
         <Route path="/accounts" element={<Accounts />} />
+        <Route path="/inbox" element={<Inbox />} />
+        <Route path="/strategy" element={<Strategy />} />
+        <Route path="/link-in-bio" element={<LinkInBio />} />
+        <Route path="/feed-planner" element={<FeedPlanner />} />
+        <Route path="/bulk-schedule" element={<BulkSchedule />} />
+        <Route path="/categories" element={<Categories />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
     </Routes>

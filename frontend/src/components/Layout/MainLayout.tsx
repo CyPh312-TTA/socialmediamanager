@@ -8,6 +8,12 @@ import {
   Link2,
   Settings,
   LogOut,
+  Mail,
+  Sparkles,
+  Link,
+  Grid3X3,
+  Upload,
+  Tag,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 
@@ -16,7 +22,13 @@ const navItems = [
   { to: '/compose', icon: PenSquare, label: 'Compose' },
   { to: '/calendar', icon: CalendarDays, label: 'Calendar' },
   { to: '/media', icon: Image, label: 'Media Library' },
+  { to: '/inbox', icon: Mail, label: 'Inbox' },
   { to: '/analytics', icon: BarChart3, label: 'Analytics' },
+  { to: '/strategy', icon: Sparkles, label: 'Strategy' },
+  { to: '/categories', icon: Tag, label: 'Categories' },
+  { to: '/link-in-bio', icon: Link, label: 'Link in Bio' },
+  { to: '/feed-planner', icon: Grid3X3, label: 'Feed Planner' },
+  { to: '/bulk-schedule', icon: Upload, label: 'Bulk Schedule' },
   { to: '/accounts', icon: Link2, label: 'Accounts' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ];
