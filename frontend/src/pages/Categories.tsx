@@ -129,7 +129,7 @@ export default function Categories() {
   const [formData, setFormData] = useState<CategoryFormData>(EMPTY_FORM);
   const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
   const [recyclePostId, setRecyclePostId] = useState<string | null>(null);
-  const [recycleCategoryId, setRecycleCategoryId] = useState<string | null>(null);
+  const [, setRecycleCategoryId] = useState<string | null>(null);
   const [recycleDateTime, setRecycleDateTime] = useState('');
 
   /* ---- queries ---- */

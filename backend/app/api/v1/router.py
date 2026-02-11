@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1.routes import (
     ai,
+    analytics,
     auth,
     best_time,
     bulk_schedule,
@@ -12,6 +13,7 @@ from app.api.v1.routes import (
     link_in_bio,
     media,
     posts,
+    settings,
     social_accounts,
     strategy,
 )
@@ -23,6 +25,8 @@ api_router.include_router(social_accounts.router)
 api_router.include_router(posts.router)
 api_router.include_router(media.router)
 api_router.include_router(ai.router)
+api_router.include_router(analytics.router)
+api_router.include_router(settings.router)
 api_router.include_router(link_in_bio.router)
 api_router.include_router(strategy.router)
 api_router.include_router(best_time.router)

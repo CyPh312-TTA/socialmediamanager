@@ -65,7 +65,6 @@ const THEME_PRESETS: ThemePreset[] = [
 ];
 
 const BUTTON_STYLES = ['rounded', 'pill', 'square'] as const;
-type ButtonStyleOption = (typeof BUTTON_STYLES)[number];
 
 // ── Local draft state ─────────────────────────────────────────────────────
 interface PageDraft {

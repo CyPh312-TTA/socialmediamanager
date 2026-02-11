@@ -501,8 +501,8 @@ export default function FeedPlanner() {
 
           {/* 3-column grid */}
           <div className="grid grid-cols-3 gap-px bg-gray-200">
-            {gridRows.map((row, rowIdx) =>
-              row.map((item, colIdx) => (
+            {gridRows.map((row, _rowIdx) =>
+              row.map((item, _colIdx) => (
                 <GridCell
                   key={item.post_id}
                   item={item}

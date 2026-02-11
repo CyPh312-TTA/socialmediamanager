@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useAuthStore } from './store/authStore';
 import { getMe } from './api/auth';
 import MainLayout from './components/Layout/MainLayout';
+import ToastContainer from './components/Toast';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Compose from './pages/Compose';
@@ -76,6 +77,7 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <AppContent />
+        <ToastContainer />
       </BrowserRouter>
     </QueryClientProvider>
   );

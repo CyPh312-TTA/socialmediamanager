@@ -9,14 +9,16 @@ import {
   Hash,
   Upload,
   X,
-  Image as ImageIcon,
   Video,
   Loader2,
+  MessageSquarePlus,
+  Calendar as CalendarIcon,
 } from 'lucide-react';
 import { listAccounts } from '../api/accounts';
 import { uploadMedia } from '../api/media';
 import { createPost } from '../api/posts';
 import { generateCaption, generateHashtags } from '../api/ai';
+import { toast } from '../components/Toast';
 import type { MediaAsset, SocialAccount } from '../types';
 
 const PLATFORM_COLORS: Record<string, string> = {
@@ -33,6 +35,13 @@ const PLATFORM_ICONS: Record<string, string> = {
   tiktok: 'TT',
 };
 
+const CHAR_LIMITS: Record<string, number> = {
+  twitter: 280,
+  instagram: 2200,
+  facebook: 63206,
+  tiktok: 2200,
+};
+
 export default function Compose() {
   const navigate = useNavigate();
   const [caption, setCaption] = useState('');
@@ -44,6 +53,14 @@ export default function Compose() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiDescription, setAiDescription] = useState('');
 
+  // First comment state
+  const [firstComment, setFirstComment] = useState('');
+  const [showFirstComment, setShowFirstComment] = useState(false);
+
+  // Schedule state
+  const [scheduleMode, setScheduleMode] = useState(false);
+  const [scheduleTime, setScheduleTime] = useState('');
+
   const { data: accounts } = useQuery({
     queryKey: ['accounts'],
     queryFn: listAccounts,
@@ -51,7 +68,19 @@ export default function Compose() {
 
   const publishMutation = useMutation({
     mutationFn: createPost,
-    onSuccess: () => navigate('/'),
+    onSuccess: () => {
+      toast.success(
+        scheduleMode
+          ? 'Post scheduled successfully!'
+          : 'Post published successfully!'
+      );
+      navigate('/');
+    },
+    onError: (err: any) => {
+      toast.error(
+        err?.response?.data?.detail || 'Failed to publish post'
+      );
+    },
   });
 
   const onDrop = useCallback(async (files: File[]) => {
@@ -61,8 +90,9 @@ export default function Compose() {
         const asset = await uploadMedia(file);
         setUploadedMedia((prev) => [...prev, asset]);
       }
+      toast.success(`${files.length} file(s) uploaded`);
     } catch (err) {
-      console.error('Upload failed:', err);
+      toast.error('Upload failed. Please try again.');
     }
     setUploading(false);
   }, []);
@@ -93,19 +123,26 @@ export default function Compose() {
     }
   };
 
+  // Get the most restrictive character limit for selected platforms
+  const selectedPlatforms = (accounts || [])
+    .filter((a) => selectedAccounts.includes(a.id))
+    .map((a) => a.platform);
+  const minCharLimit = selectedPlatforms.length
+    ? Math.min(...selectedPlatforms.map((p) => CHAR_LIMITS[p] || 2200))
+    : 2200;
+  const isOverLimit = caption.length > minCharLimit;
+
   const handleAiCaption = async () => {
     if (!aiDescription.trim()) return;
     setAiLoading(true);
     try {
-      const selectedPlatforms = (accounts || [])
-        .filter((a) => selectedAccounts.includes(a.id))
-        .map((a) => a.platform);
       const platforms = selectedPlatforms.length ? selectedPlatforms : ['instagram'];
       const result = await generateCaption(aiDescription, platforms);
       const firstCaption = Object.values(result.captions)[0] || '';
       setCaption(firstCaption);
+      toast.success('Caption generated!');
     } catch (err) {
-      console.error('AI caption failed:', err);
+      toast.error('AI caption generation failed');
     }
     setAiLoading(false);
   };
@@ -116,14 +153,22 @@ export default function Compose() {
     try {
       const result = await generateHashtags(caption, 'instagram');
       setHashtags(result.hashtags.slice(0, 20));
+      toast.success(`${result.hashtags.length} hashtags generated!`);
     } catch (err) {
-      console.error('AI hashtags failed:', err);
+      toast.error('AI hashtag generation failed');
     }
     setAiLoading(false);
   };
 
   const handlePublish = () => {
-    if (!caption.trim() || selectedAccounts.length === 0) return;
+    if (!caption.trim() || selectedAccounts.length === 0) {
+      toast.warning('Please add a caption and select at least one account');
+      return;
+    }
+    if (isOverLimit) {
+      toast.warning(`Caption exceeds the ${minCharLimit} character limit`);
+      return;
+    }
     publishMutation.mutate({
       caption,
       hashtags: hashtags.length ? hashtags : undefined,
@@ -133,8 +178,30 @@ export default function Compose() {
     });
   };
 
+  const handleSchedule = () => {
+    if (!caption.trim() || selectedAccounts.length === 0) {
+      toast.warning('Please add a caption and select at least one account');
+      return;
+    }
+    if (!scheduleTime) {
+      toast.warning('Please select a schedule time');
+      return;
+    }
+    publishMutation.mutate({
+      caption,
+      hashtags: hashtags.length ? hashtags : undefined,
+      media_ids: uploadedMedia.map((m) => m.id),
+      account_ids: selectedAccounts,
+      schedule_time: scheduleTime,
+      publish_now: false,
+    });
+  };
+
   const handleSaveDraft = () => {
-    if (!caption.trim() || selectedAccounts.length === 0) return;
+    if (!caption.trim() || selectedAccounts.length === 0) {
+      toast.warning('Please add a caption and select at least one account');
+      return;
+    }
     publishMutation.mutate({
       caption,
       hashtags: hashtags.length ? hashtags : undefined,
@@ -158,11 +225,20 @@ export default function Compose() {
               value={caption}
               onChange={(e) => setCaption(e.target.value)}
               rows={6}
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+              className={`w-full px-3 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none ${
+                isOverLimit ? 'border-red-300 bg-red-50' : 'border-gray-300'
+              }`}
               placeholder="Write your post caption..."
             />
             <div className="flex justify-between mt-2">
-              <span className="text-xs text-gray-400">{caption.length} characters</span>
+              <span className={`text-xs ${isOverLimit ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
+                {caption.length} / {minCharLimit} characters
+              </span>
+              {selectedPlatforms.length > 0 && (
+                <span className="text-xs text-gray-400">
+                  {selectedPlatforms.map((p) => p).join(', ')}
+                </span>
+              )}
             </div>
           </div>
 
@@ -270,6 +346,41 @@ export default function Compose() {
               </div>
             )}
           </div>
+
+          {/* First Comment */}
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <MessageSquarePlus size={18} className="text-gray-600" />
+                <label className="block text-sm font-medium text-gray-700">First Comment</label>
+              </div>
+              <button
+                onClick={() => setShowFirstComment(!showFirstComment)}
+                className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${
+                  showFirstComment
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {showFirstComment ? 'Enabled' : 'Add First Comment'}
+              </button>
+            </div>
+            {showFirstComment && (
+              <>
+                <p className="text-xs text-gray-500 mb-2">
+                  Automatically post a comment right after publishing. Great for adding extra
+                  hashtags on Instagram or engagement prompts.
+                </p>
+                <textarea
+                  value={firstComment}
+                  onChange={(e) => setFirstComment(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  placeholder="e.g., Drop a comment if you agree! or extra hashtags..."
+                />
+              </>
+            )}
+          </div>
         </div>
 
         {/* Sidebar */}
@@ -340,22 +451,68 @@ export default function Compose() {
             </button>
           </div>
 
+          {/* Schedule */}
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <CalendarIcon size={18} className="text-gray-600" />
+                <h3 className="text-sm font-medium text-gray-700">Schedule</h3>
+              </div>
+              <button
+                onClick={() => setScheduleMode(!scheduleMode)}
+                className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${
+                  scheduleMode
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {scheduleMode ? 'Scheduling' : 'Schedule'}
+              </button>
+            </div>
+            {scheduleMode && (
+              <input
+                type="datetime-local"
+                value={scheduleTime}
+                onChange={(e) => setScheduleTime(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                min={new Date().toISOString().slice(0, 16)}
+              />
+            )}
+          </div>
+
           {/* Actions */}
           <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-3">
-            <button
-              onClick={handlePublish}
-              disabled={
-                publishMutation.isPending || !caption.trim() || selectedAccounts.length === 0
-              }
-              className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
-            >
-              {publishMutation.isPending ? (
-                <Loader2 size={16} className="animate-spin" />
-              ) : (
-                <Send size={16} />
-              )}
-              Publish Now
-            </button>
+            {scheduleMode ? (
+              <button
+                onClick={handleSchedule}
+                disabled={
+                  publishMutation.isPending || !caption.trim() || selectedAccounts.length === 0 || !scheduleTime
+                }
+                className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+              >
+                {publishMutation.isPending ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <Clock size={16} />
+                )}
+                Schedule Post
+              </button>
+            ) : (
+              <button
+                onClick={handlePublish}
+                disabled={
+                  publishMutation.isPending || !caption.trim() || selectedAccounts.length === 0
+                }
+                className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+              >
+                {publishMutation.isPending ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <Send size={16} />
+                )}
+                Publish Now
+              </button>
+            )}
 
             <button
               onClick={handleSaveDraft}

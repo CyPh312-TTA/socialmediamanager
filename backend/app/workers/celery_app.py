@@ -19,6 +19,14 @@ celery_app.conf.update(
             "task": "app.workers.publish_tasks.refresh_expiring_tokens",
             "schedule": 21600.0,  # 6 hours
         },
+        "fetch-metrics-every-4-hours": {
+            "task": "app.workers.analytics_tasks.fetch_all_metrics",
+            "schedule": 14400.0,  # 4 hours
+        },
+        "analyze-engagement-daily": {
+            "task": "app.workers.analytics_tasks.analyze_all_engagement",
+            "schedule": 86400.0,  # 24 hours
+        },
     },
 )
 

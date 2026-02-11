@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link2, Trash2, CheckCircle, AlertCircle, ExternalLink } from 'lucide-react';
+import { Trash2, CheckCircle, AlertCircle, ExternalLink } from 'lucide-react';
 import { listAccounts, startOAuth, disconnectAccount } from '../api/accounts';
 import type { SocialAccount } from '../types';
 
