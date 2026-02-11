@@ -28,6 +28,7 @@ class PostUpdate(BaseModel):
     hashtags: list[str] | None = None
     post_type: str | None = None
     media_ids: list[str] | None = None
+    schedule_time: datetime | None = None  # reschedule a post
 
 
 class PostResponse(BaseModel):
@@ -37,6 +38,7 @@ class PostResponse(BaseModel):
     status: str
     post_type: str
     ai_generated: bool
+    scheduled_time: datetime | None = None
     created_at: datetime
     updated_at: datetime
     platforms: list[PostPlatformStatus] = []

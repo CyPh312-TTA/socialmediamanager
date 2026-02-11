@@ -53,6 +53,7 @@ export interface Post {
   status: 'draft' | 'scheduled' | 'publishing' | 'published' | 'failed';
   post_type: string;
   ai_generated: boolean;
+  scheduled_time: string | null;
   created_at: string;
   updated_at: string;
   platforms: PostPlatformStatus[];

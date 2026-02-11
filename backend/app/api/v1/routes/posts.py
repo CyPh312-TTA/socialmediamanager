@@ -35,6 +35,12 @@ def _post_to_response(post) -> PostResponse:
         except json.JSONDecodeError:
             hashtags = []
 
+    # Get scheduled_time from the scheduled_post relationship
+    scheduled_time = None
+    sp = getattr(post, "scheduled_post", None)
+    if sp and hasattr(sp, "scheduled_time"):
+        scheduled_time = sp.scheduled_time
+
     return PostResponse(
         id=post.id,
         caption=post.caption,
@@ -42,6 +48,7 @@ def _post_to_response(post) -> PostResponse:
         status=post.status,
         post_type=post.post_type,
         ai_generated=post.ai_generated,
+        scheduled_time=scheduled_time,
         created_at=post.created_at,
         updated_at=post.updated_at,
         platforms=platforms,
@@ -80,6 +87,27 @@ async def get_post(
     db: AsyncSession = Depends(get_db),
 ):
     post = await post_service.get_post(post_id, user, db)
+    return _post_to_response(post)
+
+
+@router.put("/{post_id}", response_model=PostResponse)
+async def update_post(
+    post_id: str,
+    data: PostUpdate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    post = await post_service.update_post(post_id, data, user, db)
+    return _post_to_response(post)
+
+
+@router.post("/{post_id}/cancel", response_model=PostResponse)
+async def cancel_post(
+    post_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    post = await post_service.cancel_scheduled_post(post_id, user, db)
     return _post_to_response(post)
 
 

@@ -15,6 +15,10 @@ celery_app.conf.update(
     timezone="UTC",
     enable_utc=True,
     beat_schedule={
+        "process-scheduled-posts-every-60s": {
+            "task": "app.workers.publish_tasks.process_pending_scheduled_posts",
+            "schedule": 60.0,  # every 60 seconds
+        },
         "refresh-tokens-every-6-hours": {
             "task": "app.workers.publish_tasks.refresh_expiring_tokens",
             "schedule": 21600.0,  # 6 hours

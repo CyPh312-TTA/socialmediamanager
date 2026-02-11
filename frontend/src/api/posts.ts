@@ -34,6 +34,24 @@ export async function getPost(id: string) {
   return resp.data;
 }
 
+interface UpdatePostData {
+  caption?: string;
+  hashtags?: string[];
+  post_type?: string;
+  media_ids?: string[];
+  schedule_time?: string;
+}
+
+export async function updatePost(id: string, data: UpdatePostData) {
+  const resp = await api.put<Post>(`/posts/${id}`, data);
+  return resp.data;
+}
+
+export async function cancelPost(id: string) {
+  const resp = await api.post<Post>(`/posts/${id}/cancel`);
+  return resp.data;
+}
+
 export async function deletePost(id: string) {
   await api.delete(`/posts/${id}`);
 }

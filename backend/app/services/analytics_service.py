@@ -270,7 +270,6 @@ async def fetch_platform_metrics(
     social_account_id: str, db: AsyncSession
 ) -> dict:
     """Fetch latest metrics from a platform and store as snapshots."""
-    from app.core.security import decrypt_token
     from app.services.post_service import get_platform_client
 
     account_result = await db.execute(
@@ -284,15 +283,13 @@ async def fetch_platform_metrics(
         client = get_platform_client(account)
 
         # Fetch account-level metrics
-        acct_metrics = await client.get_account_metrics(
-            decrypt_token(account.access_token)
-        )
+        acct_metrics = await client.get_account_metrics()
 
         today = date.today()
         snap = AnalyticsSnapshot(
             social_account_id=account.id,
             metric_type="account",
-            followers_count=acct_metrics.followers,
+            followers_count=acct_metrics.followers_count,
             impressions=0,
             reach=0,
             likes=0,
@@ -314,10 +311,7 @@ async def fetch_platform_metrics(
         post_metrics_count = 0
         for pp in pp_result.scalars().all():
             try:
-                metrics = await client.get_post_metrics(
-                    decrypt_token(account.access_token),
-                    pp.platform_post_id,
-                )
+                metrics = await client.get_post_metrics(pp.platform_post_id)
                 total_eng = metrics.likes + metrics.comments + metrics.shares
                 eng_rate = (total_eng / metrics.impressions * 100) if metrics.impressions > 0 else 0.0
 
@@ -342,7 +336,7 @@ async def fetch_platform_metrics(
         return {
             "account_id": account.id,
             "platform": account.platform,
-            "followers": acct_metrics.followers,
+            "followers": acct_metrics.followers_count,
             "posts_tracked": post_metrics_count,
         }
     except Exception as e:

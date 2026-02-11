@@ -17,7 +17,7 @@ from app.platforms.base import SocialPlatformBase
 from app.platforms.meta import MetaPlatform
 from app.platforms.tiktok import TikTokPlatform
 from app.platforms.twitter import TwitterPlatform
-from app.schemas.post import PostCreate
+from app.schemas.post import PostCreate, PostUpdate
 from app.utils.health_monitor import health_monitor
 from app.utils.rate_limiter import rate_limiter
 
@@ -213,7 +213,10 @@ async def list_posts(
 ) -> tuple[list[Post], int]:
     query = (
         select(Post)
-        .options(selectinload(Post.post_platforms).selectinload(PostPlatform.social_account))
+        .options(
+            selectinload(Post.post_platforms).selectinload(PostPlatform.social_account),
+            selectinload(Post.scheduled_post),
+        )
         .where(Post.user_id == user.id)
     )
     count_query = select(func.count()).select_from(Post).where(Post.user_id == user.id)
@@ -235,12 +238,91 @@ async def list_posts(
 async def get_post(post_id: str, user: User, db: AsyncSession) -> Post:
     result = await db.execute(
         select(Post)
-        .options(selectinload(Post.post_platforms).selectinload(PostPlatform.social_account))
+        .options(
+            selectinload(Post.post_platforms).selectinload(PostPlatform.social_account),
+            selectinload(Post.scheduled_post),
+        )
         .where(Post.id == post_id, Post.user_id == user.id)
     )
     post = result.scalar_one_or_none()
     if not post:
         raise NotFoundError("Post not found")
+    return post
+
+
+async def update_post(post_id: str, data: PostUpdate, user: User, db: AsyncSession) -> Post:
+    """Update a draft or scheduled post."""
+    post = await get_post(post_id, user, db)
+
+    if post.status not in ("draft", "scheduled"):
+        raise BadRequestError("Only draft or scheduled posts can be updated")
+
+    if data.caption is not None:
+        post.caption = data.caption
+    if data.hashtags is not None:
+        post.hashtags = json.dumps(data.hashtags) if data.hashtags else None
+    if data.post_type is not None:
+        post.post_type = data.post_type
+
+    # Update media if provided
+    if data.media_ids is not None:
+        # Validate media IDs
+        if data.media_ids:
+            result = await db.execute(
+                select(MediaAsset).where(
+                    MediaAsset.id.in_(data.media_ids),
+                    MediaAsset.user_id == user.id,
+                )
+            )
+            media_assets = list(result.scalars().all())
+            if len(media_assets) != len(data.media_ids):
+                raise BadRequestError("One or more media assets not found")
+
+        # Remove existing media links
+        existing_media = await db.execute(
+            select(PostMedia).where(PostMedia.post_id == post.id)
+        )
+        for pm in existing_media.scalars().all():
+            await db.delete(pm)
+
+        # Add new media links
+        for i, media_id in enumerate(data.media_ids):
+            pm = PostMedia(post_id=post.id, media_asset_id=media_id, position=i)
+            db.add(pm)
+
+    # Handle schedule time changes
+    if data.schedule_time is not None:
+        sp = post.scheduled_post
+        if sp:
+            # Update existing scheduled post
+            sp.scheduled_time = data.schedule_time
+            sp.status = "pending"
+        else:
+            # Create new scheduled post entry
+            sp = ScheduledPost(
+                post_id=post.id,
+                scheduled_time=data.schedule_time,
+            )
+            db.add(sp)
+        post.status = "scheduled"
+
+    await db.flush()
+    return post
+
+
+async def cancel_scheduled_post(post_id: str, user: User, db: AsyncSession) -> Post:
+    """Cancel a scheduled post, reverting it to draft status."""
+    post = await get_post(post_id, user, db)
+
+    if post.status != "scheduled":
+        raise BadRequestError("Only scheduled posts can be cancelled")
+
+    sp = post.scheduled_post
+    if sp:
+        sp.status = "cancelled"
+
+    post.status = "draft"
+    await db.flush()
     return post
 
 

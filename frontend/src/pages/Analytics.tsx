@@ -11,10 +11,20 @@ import {
   RefreshCw,
   Loader2,
 } from 'lucide-react';
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts';
 import { getDashboard, refreshMetrics } from '../api/analytics';
+import { getHeatmap } from '../api/bestTime';
 import { listAccounts } from '../api/accounts';
 import { toast } from '../components/Toast';
 import type { PlatformBreakdown } from '../api/analytics';
+import type { HeatmapCell } from '../api/bestTime';
 
 const PLATFORM_COLORS: Record<string, string> = {
   twitter: 'bg-sky-500',
@@ -24,11 +34,13 @@ const PLATFORM_COLORS: Record<string, string> = {
 };
 
 const PLATFORM_LABELS: Record<string, string> = {
-  twitter: '𝕏 Twitter',
+  twitter: '\uD835\uDD4F Twitter',
   instagram: 'Instagram',
   facebook: 'Facebook',
   tiktok: 'TikTok',
 };
+
+const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 function formatNumber(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -140,31 +152,84 @@ function PlatformCard({ data }: { data: PlatformBreakdown }) {
   );
 }
 
-function MiniChart({ data, dataKey }: { data: { date: string; [key: string]: any }[]; dataKey: string }) {
-  if (data.length === 0) return null;
+function EngagementHeatmap({ data }: { data: HeatmapCell[] }) {
+  if (!data || data.length === 0) {
+    return (
+      <p className="text-sm text-gray-400 text-center py-8">
+        No engagement data available yet. Publish posts and wait for analytics to accumulate.
+      </p>
+    );
+  }
 
-  const values = data.map((d) => d[dataKey] as number);
-  const max = Math.max(...values, 1);
+  // Build a 7×24 grid
+  const grid: Record<string, number> = {};
+  let maxVal = 0;
+  for (const cell of data) {
+    const key = `${cell.day_of_week}-${cell.hour_utc}`;
+    grid[key] = cell.value;
+    if (cell.value > maxVal) maxVal = cell.value;
+  }
+
+  function getColor(val: number): string {
+    if (maxVal === 0) return 'bg-gray-100';
+    const ratio = val / maxVal;
+    if (ratio === 0) return 'bg-gray-100';
+    if (ratio < 0.2) return 'bg-blue-100';
+    if (ratio < 0.4) return 'bg-blue-200';
+    if (ratio < 0.6) return 'bg-blue-300';
+    if (ratio < 0.8) return 'bg-blue-400';
+    return 'bg-blue-600';
+  }
 
   return (
-    <div className="flex items-end gap-px h-16 w-full">
-      {data.slice(-14).map((d, i) => {
-        const height = (d[dataKey] / max) * 100;
-        return (
-          <div
-            key={i}
-            className="flex-1 bg-blue-400 rounded-t-sm hover:bg-blue-600 transition-colors cursor-pointer"
-            style={{ height: `${Math.max(height, 2)}%` }}
-            title={`${d.date}: ${formatNumber(d[dataKey])}`}
-          />
-        );
-      })}
+    <div className="overflow-x-auto">
+      <div className="min-w-[600px]">
+        {/* Hour labels */}
+        <div className="flex gap-px mb-1 ml-10">
+          {Array.from({ length: 24 }, (_, h) => (
+            <div key={h} className="flex-1 text-center text-[10px] text-gray-400">
+              {h % 3 === 0 ? `${h}h` : ''}
+            </div>
+          ))}
+        </div>
+        {/* Rows for each day */}
+        {Array.from({ length: 7 }, (_, dayIdx) => (
+          <div key={dayIdx} className="flex gap-px items-center mb-px">
+            <span className="text-xs text-gray-500 w-10 text-right pr-2 flex-shrink-0">
+              {DAY_NAMES[dayIdx]}
+            </span>
+            {Array.from({ length: 24 }, (_, hour) => {
+              const val = grid[`${dayIdx}-${hour}`] || 0;
+              return (
+                <div
+                  key={hour}
+                  className={`flex-1 h-5 rounded-sm ${getColor(val)} transition-colors`}
+                  title={`${DAY_NAMES[dayIdx]} ${hour}:00 — ${val.toFixed(2)}% engagement`}
+                />
+              );
+            })}
+          </div>
+        ))}
+        {/* Color legend */}
+        <div className="flex items-center gap-2 mt-3 ml-10">
+          <span className="text-[10px] text-gray-400">Low</span>
+          <div className="flex gap-px">
+            {['bg-gray-100', 'bg-blue-100', 'bg-blue-200', 'bg-blue-300', 'bg-blue-400', 'bg-blue-600'].map(
+              (c, i) => (
+                <div key={i} className={`w-4 h-3 rounded-sm ${c}`} />
+              )
+            )}
+          </div>
+          <span className="text-[10px] text-gray-400">High</span>
+        </div>
+      </div>
     </div>
   );
 }
 
 export default function Analytics() {
   const [days, setDays] = useState(30);
+  const [heatmapAccountId, setHeatmapAccountId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const { data: dashboard, isLoading } = useQuery({
@@ -175,6 +240,15 @@ export default function Analytics() {
   const { data: accounts } = useQuery({
     queryKey: ['accounts'],
     queryFn: listAccounts,
+  });
+
+  // Set default heatmap account when accounts load
+  const selectedHeatmapId = heatmapAccountId || (accounts && accounts.length > 0 ? accounts[0].id : null);
+
+  const { data: heatmapData } = useQuery({
+    queryKey: ['heatmap', selectedHeatmapId],
+    queryFn: () => getHeatmap(selectedHeatmapId!),
+    enabled: !!selectedHeatmapId,
   });
 
   const refreshMutation = useMutation({
@@ -298,20 +372,116 @@ export default function Analytics() {
             </div>
           </div>
 
-          {/* Daily Trend Chart */}
+          {/* Daily Trend Charts — Recharts */}
           {dashboard?.daily_metrics && dashboard.daily_metrics.length > 0 && (
             <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">Daily Trends</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <p className="text-sm text-gray-500 mb-2">Impressions</p>
-                  <MiniChart data={dashboard.daily_metrics} dataKey="impressions" />
+                  <ResponsiveContainer width="100%" height={180}>
+                    <AreaChart data={dashboard.daily_metrics}>
+                      <defs>
+                        <linearGradient id="impressionsGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <XAxis
+                        dataKey="date"
+                        tickFormatter={(d) => String(d).slice(5)}
+                        tick={{ fontSize: 10, fill: '#9CA3AF' }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        tickFormatter={(v) => formatNumber(Number(v))}
+                        tick={{ fontSize: 10, fill: '#9CA3AF' }}
+                        axisLine={false}
+                        tickLine={false}
+                        width={45}
+                      />
+                      <Tooltip
+                        formatter={(value: unknown) => [formatNumber(Number(value ?? 0)), 'Impressions']}
+                        labelFormatter={(label: unknown) => `Date: ${label}`}
+                        contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="impressions"
+                        stroke="#3B82F6"
+                        strokeWidth={2}
+                        fill="url(#impressionsGrad)"
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500 mb-2">Engagement Rate (%)</p>
-                  <MiniChart data={dashboard.daily_metrics} dataKey="engagement_rate" />
+                  <ResponsiveContainer width="100%" height={180}>
+                    <AreaChart data={dashboard.daily_metrics}>
+                      <defs>
+                        <linearGradient id="engagementGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#10B981" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="#10B981" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <XAxis
+                        dataKey="date"
+                        tickFormatter={(d) => String(d).slice(5)}
+                        tick={{ fontSize: 10, fill: '#9CA3AF' }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        tickFormatter={(v) => `${v}%`}
+                        tick={{ fontSize: 10, fill: '#9CA3AF' }}
+                        axisLine={false}
+                        tickLine={false}
+                        width={45}
+                      />
+                      <Tooltip
+                        formatter={(value: unknown) => [`${Number(value ?? 0)}%`, 'Engagement']}
+                        labelFormatter={(label: unknown) => `Date: ${label}`}
+                        contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="engagement_rate"
+                        stroke="#10B981"
+                        strokeWidth={2}
+                        fill="url(#engagementGrad)"
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Best Times to Post — Heatmap */}
+          {accounts && accounts.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-gray-900">Best Times to Post</h2>
+                {accounts.length > 1 && (
+                  <select
+                    value={selectedHeatmapId || ''}
+                    onChange={(e) => setHeatmapAccountId(e.target.value)}
+                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {accounts.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        @{a.platform_username} ({a.platform})
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              <p className="text-xs text-gray-400 mb-3">
+                Engagement rate by day and hour (UTC). Darker = higher engagement.
+              </p>
+              <EngagementHeatmap data={heatmapData?.data || []} />
             </div>
           )}
 
